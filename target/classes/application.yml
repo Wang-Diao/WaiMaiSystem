@@ -1,0 +1,40 @@
+server:
+  port: 8080
+spring:
+  application:
+    #应用的名称，可选
+    name: reggie_take_out
+  datasource:
+    druid:
+      driver-class-name: com.mysql.cj.jdbc.Driver
+      url: jdbc:mysql://localhost:3306/reggie?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull&useSSL=false&allowPublicKeyRetrieval=true
+      username: root
+      password: 123456
+
+  mail:
+    host: smtp.qq.com
+    # 协议 默认就是smtp
+    protocol: smtp
+    username: 810414696@qq.com
+    password: ffhjflyknrdebebc
+    default-encoding: utf-8
+    # smtp的指定端口 使用587要将protocol改为smtps
+    port: 587
+    # 设置开启ssl
+    properties:
+      mail:
+        stmp:
+          ssl:
+            enable: true
+
+mybatis-plus:
+  configuration:
+    #在映射实体或者属性时，将数据库中表名和字段名中的下划线去掉，按照驼峰命名法映射
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: ASSIGN_ID   #雪花算法
+
+reggie:
+  path: D:\img\
