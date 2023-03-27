@@ -15,10 +15,13 @@ import com.itheima.reggie.service.DishService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletRequest;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @RestController
@@ -34,11 +37,22 @@ public class DishController {
     @Autowired
     private CategoryService categoryService;
 
+    @Autowired
+    private RedisTemplate redisTemplate;
 
     @PostMapping
     public R<String> save(@RequestBody DishDto dishDto){
         log.info(dishDto.toString());
         dishService.saveWithFlavor(dishDto);
+
+        //清理所有菜品缓存
+        Set keys = redisTemplate.keys("dish_*");
+        redisTemplate.delete(keys);
+
+        //清理某个分类下面的菜品缓存数据
+        //String key = "dish_" + dishDto.getCategoryId() + "_1";
+        //redisTemplate.delete(key);
+
         return R.success("新增菜品成功");
     }
 
@@ -91,8 +105,30 @@ public class DishController {
     //修改菜品
     @PutMapping
     public R<String> update(@RequestBody DishDto dishDto){
+        //查找当前菜品对应的categoryId（前端给的是修改过的，要拿之前的categoryId），然后在缓存中删除，防止下面的bug发生
+        Dish dish = dishService.getById(dishDto.getId());
+        //查询出来的是数据库里的categoryId
+        Long categoryId = dish.getCategoryId();
+        log.info("修改前的categoryId为：" + categoryId);
+        String key1 = "dish_" + categoryId + "_1";
+        redisTemplate.delete(key1);
+
         log.info(dishDto.toString());
         dishService.updateWithFlavor(dishDto);
+
+
+
+        //清理所有菜品缓存
+        //Set keys = redisTemplate.keys("dish_*");
+        //redisTemplate.delete(keys);
+
+        //清理某个分类下面的菜品缓存数据
+        //bug:将菜品的种类进行更改时，会导致这个菜品出现在两个种类中(前端拿到的dishDto.getCategoryId()已经是改过的)
+        //上面已修改
+        String key = "dish_" + dishDto.getCategoryId() + "_1";
+        redisTemplate.delete(key);
+
+
         return R.success("修改菜品成功");
     }
 
@@ -149,13 +185,22 @@ public class DishController {
     //根据条件查询菜品数据
     @GetMapping("/list")
     public R<List<DishDto>> list(Dish dish){
+        List<DishDto> dishDtoList = null;
+        String key = "dish_" + dish.getCategoryId() + "_" + dish.getStatus();
+        //先从redis中获取缓存数据
+        dishDtoList = (List<DishDto>) redisTemplate.opsForValue().get(key);
+        if(dishDtoList != null){
+            //如果存在，直接返回，无需查询数据库
+            return R.success(dishDtoList);
+        }
+
         LambdaQueryWrapper<Dish> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(dish.getCategoryId() != null,Dish::getCategoryId,dish.getCategoryId());
         //查询起售状态是1的菜品
         queryWrapper.eq(Dish::getStatus,1);
         List<Dish> list = dishService.list(queryWrapper);
 
-        List<DishDto> dishDtoList = list.stream().map((item) -> {
+        dishDtoList = list.stream().map((item) -> {
             DishDto dishDto = new DishDto();
             //将Dish里的数据copy
             BeanUtils.copyProperties(item,dishDto);   //dishDto里面拿到了records，然后对records做了修改，再return
@@ -176,6 +221,9 @@ public class DishController {
             dishDto.setFlavors(dishFlavorList);
             return dishDto;
         }).collect(Collectors.toList());
+
+        //如果不存在，需要查询数据库，将查询到的菜品数据缓存到redis中
+        redisTemplate.opsForValue().set(key,dishDtoList,60, TimeUnit.MINUTES);
 
         return R.success(dishDtoList);
     }
